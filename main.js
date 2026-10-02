@@ -1282,9 +1282,9 @@ export default {
   manifest: {
     id: "notible.habits",
     name: "Notible Habits",
-    version: "0.9.0",
+    version: "0.9.1",
     apiVersion: "1.8",
-    description: "Track habits without leaving the workspace: tick what is due today in the sidebar, watch the streak, and open a year heatmap to see what actually held. Daily, chosen weekdays, every N days or a weekly target. Each habit is an ordinary workspace object, so it syncs, searches and exports like everything else.",
+    description: "Track habits in the sidebar: tick off what is due today, keep a streak, and see a year at a glance. Daily, on chosen weekdays, every few days or a weekly target.",
     author: "Notible",
     permissions: ["data.read", "data.write", "workspace.ui"],
   },

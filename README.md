@@ -262,8 +262,3 @@ change, and a broken schedule falling back to daily — the props round trip,
 the cap, and the heatmap grid and its labels. Run it after touching anything
 in `main.js` — most of what can break here breaks silently and only shows up
 as a square on the wrong day.
-
-## Install
-
-In Notible: **Settings -> Plugins -> Market**, then install "Notible Habits".
-This repo is the source; the market pulls `plugin.json` + `notible.habits.zip` from the latest GitHub Release.
