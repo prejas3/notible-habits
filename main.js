@@ -20,6 +20,25 @@
  * them under plain node; the plugin itself is the default export.
  */
 
+// I18N (Hive #28): every UI string goes through t(); Polish is in
+// locales/pl.json (checked by scripts/plugin-locale-check.mjs). English until
+// onload() hands t over to Core's translator, which also follows a language
+// change. tr() only marks a module-level label that is passed to t() later.
+let t = (key, values) => (values ? key.replace(/\{(\w+)\}/g, (whole, name) => (name in values ? String(values[name]) : whole)) : key);
+const tr = (key) => key;
+
+// I18N (Hive #55): text for a count. An `extra` key ("...#few", "...#one") exists
+// only in locale files, so English never shows it; an untranslated one falls back.
+export const pluralText = (t, forms, count, locale, values) => {
+  const category = new Intl.PluralRules(locale || "en").select(count);
+  const extra = forms.extra?.[category];
+  return t(extra && t(extra) !== extra ? extra : category === "one" ? forms.one : forms.other, values);
+};
+export const LAST_WEEKS = { one: tr("of the last {count} week"), other: tr("of the last {count} weeks") };
+const DAY_STREAK = { one: tr("day streak"), other: tr("day streak"), extra: { one: tr("day streak#one") } };
+const WEEK_STREAK = { one: tr("week streak"), other: tr("week streak"), extra: { one: tr("week streak#one"), few: tr("week streak#few") } };
+const SCHEDULED = { one: tr("of {count} scheduled"), other: tr("of {count} scheduled"), extra: { one: tr("of {count} scheduled#one") } };
+
 /** Habits are objects, not plugin storage. `context.storage` is a per-plugin
  * key/value bag: it does not sync between machines, does not appear in search
  * or export, and is readable by every other installed plugin. A habit the user
@@ -43,13 +62,13 @@ const MAX_INTERVAL = 365;
  * that depends on the runtime's locale data, which self-check must not, and a
  * plugin panel that silently switches to another language mid-grid would be
  * a stranger bug than a hardcoded English abbreviation. */
-const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_ABBR = [tr("Jan"), tr("Feb"), tr("Mar"), tr("Apr"), tr("May"), tr("Jun"), tr("Jul"), tr("Aug"), tr("Sep"), tr("Oct"), tr("Nov"), tr("Dec")];
 /** Weekday row labels down the left of the heatmap, GitHub-contribution-graph
  * style: every row would crowd a grid this narrow, so only every other one is
  * labelled. Index matches `heatmapGrid`'s day order, Monday=0 … Sunday=6. */
-const WEEKDAY_ABBR = ["Mon", "", "Wed", "", "Fri", "", ""];
+const WEEKDAY_ABBR = [tr("Mon"), "", tr("Wed"), "", tr("Fri"), "", ""];
 /** Full set for the schedule editor's day toggles, same Monday=0 order. */
-const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAY_NAMES = [tr("Mon"), tr("Tue"), tr("Wed"), tr("Thu"), tr("Fri"), tr("Sat"), tr("Sun")];
 
 // ------------------------------------------------------------------ days
 //
@@ -162,10 +181,10 @@ export function parseSchedule(raw) {
  * the editor under the grid. */
 export function scheduleLabel(schedule) {
   const plan = parseSchedule(schedule);
-  if (plan.kind === "weekdays") return plan.weekdays.map((day) => WEEKDAY_NAMES[day]).join(" ");
-  if (plan.kind === "interval") return plan.every === 1 ? "Daily" : `Every ${plan.every} days`;
-  if (plan.kind === "weekly") return plan.target === 1 ? "Once a week" : `${plan.target}× a week`;
-  return "Daily";
+  if (plan.kind === "weekdays") return plan.weekdays.map((day) => t(WEEKDAY_NAMES[day])).join(" ");
+  if (plan.kind === "interval") return plan.every === 1 ? t("Daily") : t("Every {count} days", { count: plan.every });
+  if (plan.kind === "weekly") return plan.target === 1 ? t("Once a week") : t("{count}× a week", { count: plan.target });
+  return t("Daily");
 }
 
 /**
@@ -627,7 +646,7 @@ class Habits {
     try {
       await this.context.data.objects.update(habit.id, { props: serializeHabit({ ...habit, days }) });
     } catch (cause) {
-      this.context.ui.notice(`Could not save that tick: ${String(cause?.message ?? cause)}`);
+      this.context.ui.notice(t("Could not save that tick: {reason}", { reason: String(cause?.message ?? cause) }));
       await this.load();
     }
   }
@@ -642,7 +661,7 @@ class Habits {
  * to the habits it is about to join. One field, still: a new habit is daily,
  * and its schedule is set later, beside its grid. */
 function addField(habits) {
-  const field = element("input", { type: "text", placeholder: "New habit", maxLength: NAME_LIMIT, className: "nhab-input nhab-input--quiet" });
+  const field = element("input", { type: "text", placeholder: t("New habit"), maxLength: NAME_LIMIT, className: "nhab-input nhab-input--quiet" });
   const submit = () => {
     const name = field.value.trim();
     field.value = "";
@@ -696,14 +715,14 @@ function sidebarRow(habits, habit, today) {
   const box = element("input", { type: "checkbox", checked: done, className: "nhab-check" });
   box.addEventListener("change", () => { void habits.toggle(habit, today); });
   label.append(box);
-  label.append(text("span", habit.name || "Untitled habit", "nhab-today__name"));
+  label.append(text("span", habit.name || t("Untitled habit"), "nhab-today__name"));
   if (habit.schedule.kind === "weekly") {
     const progress = weekProgress(habit.days, today, habit.schedule);
     label.append(text("small", `${progress.done}/${progress.target}`, "nhab-today__week"));
   }
   const row = element("li", { className: "nhab-today__row" }, [label, text("small", streakText(habit, today), "nhab-today__streak")]);
   row.dataset.done = done ? "yes" : "no";
-  row.title = `${habit.name || "Untitled habit"} · ${scheduleLabel(habit.schedule)}`;
+  row.title = `${habit.name || t("Untitled habit")} · ${scheduleLabel(habit.schedule)}`;
   return row;
 }
 
@@ -726,10 +745,10 @@ function mountSidebar(habits, container) {
 
   const render = () => {
     shell.replaceChildren();
-    shell.append(element("div", { className: "nhab-side__head" }, [text("span", "Habits")]));
+    shell.append(element("div", { className: "nhab-side__head" }, [text("span", t("Habits"))]));
 
     if (habits.loading) {
-      shell.append(text("p", "Loading…", "nhab-empty"));
+      shell.append(text("p", t("Loading…"), "nhab-empty"));
       return;
     }
     if (habits.error) {
@@ -742,7 +761,7 @@ function mountSidebar(habits, container) {
     if (asked.length === 0) {
       // Two different silences, and the difference matters: a workspace with
       // no habits in it should say so, or the empty strip reads as broken.
-      shell.append(text("p", habits.habits.length === 0 ? "No habits yet — add one in Habits." : "Nothing due today.", "nhab-empty"));
+      shell.append(text("p", habits.habits.length === 0 ? t("No habits yet — add one in Habits.") : t("Nothing due today."), "nhab-empty"));
       return;
     }
 
@@ -764,13 +783,13 @@ function mountSidebar(habits, container) {
 function scheduleEditor(habits, habit, today) {
   const plan = habit.schedule;
   const block = element("div", { className: "nhab-sched" });
-  block.append(text("h4", "Schedule", "nhab-sub"));
+  block.append(text("h4", t("Schedule"), "nhab-sub"));
 
   const kinds = [
-    ["daily", "Daily"],
-    ["weekdays", "Weekdays"],
-    ["interval", "Every N days"],
-    ["weekly", "Times a week"],
+    ["daily", t("Daily")],
+    ["weekdays", t("Weekdays")],
+    ["interval", t("Every N days")],
+    ["weekly", t("Times a week")],
   ];
   const row = element("div", { className: "nhab-chips" });
   for (const [kind, label] of kinds) {
@@ -801,7 +820,7 @@ function scheduleEditor(habits, habit, today) {
       const chip = element("button", {
         type: "button",
         className: on ? "is-active" : "",
-        textContent: WEEKDAY_NAMES[index],
+        textContent: t(WEEKDAY_NAMES[index]),
         onclick: () => {
           const next = on ? plan.weekdays.filter((day) => day !== index) : [...plan.weekdays, index];
           // Unticking the last day would normalise straight back to daily,
@@ -828,13 +847,13 @@ function scheduleEditor(habits, habit, today) {
     const anchor = element("button", {
       type: "button",
       className: "nhab-button nhab-button--quiet",
-      textContent: "Restart today",
+      textContent: t("Restart today"),
       onclick: () => { void habits.setSchedule(habit, { kind: "interval", every: plan.every, start: today }); },
     });
     block.append(element("div", { className: "nhab-field" }, [
-      text("span", "Every", "nhab-field__label"),
+      text("span", t("Every"), "nhab-field__label"),
       every,
-      text("span", "days, counting from " + plan.start, "nhab-field__label"),
+      text("span", t("days, counting from {date}", { date: plan.start }), "nhab-field__label"),
       anchor,
     ]));
   }
@@ -851,9 +870,9 @@ function scheduleEditor(habits, habit, today) {
     });
     const progress = weekProgress(habit.days, today, plan);
     block.append(element("div", { className: "nhab-field" }, [
-      text("span", "Any", "nhab-field__label"),
+      text("span", t("Any"), "nhab-field__label"),
       target,
-      text("span", `days a week · ${progress.done} so far this week`, "nhab-field__label"),
+      text("span", t("days a week · {count} so far this week", { count: progress.done }), "nhab-field__label"),
     ]));
   }
 
@@ -885,7 +904,7 @@ function openRowMenu(event, habits, habit) {
   event.preventDefault();
   document.querySelector(".nhab-row-menu")?.remove();
   const menu = element("div", { className: "nhab-row-menu" });
-  const remove = element("button", { type: "button", textContent: "Remove", onclick: () => { void habits.remove(habit); menu.remove(); } });
+  const remove = element("button", { type: "button", textContent: t("Remove"), onclick: () => { void habits.remove(habit); menu.remove(); } });
   menu.append(remove);
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
@@ -909,7 +928,7 @@ function openRowMenu(event, habits, habit) {
 function habitPicker(habits, today, selectedId, select) {
   const list = element("ul", { className: "nhab-picker__list" });
   for (const habit of habits.habits) {
-    const name = habit.name || "Untitled habit";
+    const name = habit.name || t("Untitled habit");
     const done = habit.days.includes(today);
     const row = element("li", { className: "nhab-picker__row" });
     row.dataset.active = habit.id === selectedId ? "yes" : "no";
@@ -939,21 +958,28 @@ function habitPicker(habits, today, selectedId, select) {
  * nobody reads. */
 function habitDetail(habits, habit, today) {
   const detail = element("div", { className: "nhab-detail" });
-  detail.append(text("h3", habit.name || "Untitled habit", "nhab-detail__title"));
+  detail.append(text("h3", habit.name || t("Untitled habit"), "nhab-detail__title"));
 
   const streak = streakOf(habit.days, today, habit.schedule);
   const stats = scheduleStats(habit.days, today, habit.schedule, 30);
+  // The published sentence. Weeks, not days, when the schedule's unit is the
+  // week: a "day streak" on a 3×-a-week habit would name the wrong thing.
+  // "of the last N weeks" takes the count's plural form.
+  const locale = habits.context.i18n?.locale;
+  const span = (phrase) => text("span", ` ${phrase}`);
   detail.append(element("p", { className: "nhab-stats" }, [
     text("strong", String(streak)),
-    // Weeks, not days, when the schedule's unit is the week: "3 day
-    // streak" on a 3×-a-week habit would name the wrong thing entirely.
-    text("span", habit.schedule.kind === "weekly" ? " week streak · " : " day streak · "),
+    span(pluralText(t, habit.schedule.kind === "weekly" ? WEEK_STREAK : DAY_STREAK, streak, locale, { count: streak })),
+    text("span", " · "),
     text("strong", String(stats.done)),
     // "of the last 30" is only true of a daily habit; anything else is
     // counted against what its schedule actually asked for.
-    text("span", stats.unit === "weeks" ? ` of the last ${stats.expected} weeks · ` : ` of ${stats.expected} scheduled · `),
+    ...(stats.unit === "weeks"
+      ? [span(pluralText(t, LAST_WEEKS, stats.expected, locale, { count: stats.expected }))]
+      : [span(pluralText(t, SCHEDULED, stats.expected, locale, { count: stats.expected }))]),
+    text("span", " · "),
     text("strong", String(habit.days.length)),
-    text("span", " all time"),
+    span(t("all time")),
   ]));
 
   const weeks = heatmapGrid(habit.days, today, HEATMAP_WEEKS, habit.schedule);
@@ -961,12 +987,12 @@ function habitDetail(habits, habit, today) {
 
   const monthRow = element("div", { className: "nhab-grid__months" });
   for (const label of monthLabels(weeks)) {
-    monthRow.append(text("span", label || "", "nhab-grid__month"));
+    monthRow.append(text("span", label ? t(label) : "", "nhab-grid__month"));
   }
   heatmap.append(monthRow);
 
   const dayLabels = element("div", { className: "nhab-grid__daylabels" });
-  for (let row = 0; row < 7; row += 1) dayLabels.append(text("span", weekdayLabel(row)));
+  for (let row = 0; row < 7; row += 1) dayLabels.append(text("span", weekdayLabel(row) && t(weekdayLabel(row))));
   heatmap.append(dayLabels);
 
   const grid = element("div", { className: "nhab-grid" });
@@ -981,8 +1007,8 @@ function habitDetail(habits, habit, today) {
       // is; a heatmap you cannot read a date off is decoration. A day
       // the schedule never asked for says so, or the empty square reads
       // as a day the user let slip.
-      button.title = state === "skip" ? `${cell.key} — not scheduled` : cell.key;
-      const suffix = cell.ticked ? ", done" : state === "skip" ? ", not scheduled" : "";
+      button.title = state === "skip" ? t("{date} — not scheduled", { date: cell.key }) : cell.key;
+      const suffix = cell.ticked ? t(", done") : state === "skip" ? t(", not scheduled") : "";
       button.setAttribute("aria-label", `${habit.name}: ${cell.key}${suffix}`);
       if (!cell.future) button.addEventListener("click", () => { void habits.toggle(habit, cell.key); });
       column.append(button);
@@ -993,7 +1019,7 @@ function habitDetail(habits, habit, today) {
   detail.append(heatmap);
 
   const legend = element("div", { className: "nhab-legend" });
-  for (const [state, label] of [["on", "done"], ["off", "scheduled, missed"], ["skip", "not scheduled"], ["future", "still ahead"]]) {
+  for (const [state, label] of [["on", t("done")], ["off", t("scheduled, missed")], ["skip", t("not scheduled")], ["future", t("still ahead")]]) {
     const swatch = element("span", { className: "nhab-cell nhab-cell--legend" });
     swatch.dataset.state = state;
     legend.append(element("span", { className: "nhab-legend__item" }, [swatch, text("span", label)]));
@@ -1006,23 +1032,23 @@ function habitDetail(habits, habit, today) {
   // empty half the modal was criticised for.
   const name = element("input", { type: "text", value: habit.name, maxLength: NAME_LIMIT, className: "nhab-input" });
   name.addEventListener("change", () => { void habits.rename(habit, name.value); });
-  const remove = element("button", { type: "button", className: "nhab-button nhab-button--quiet", textContent: "Remove" });
+  const remove = element("button", { type: "button", className: "nhab-button nhab-button--quiet", textContent: t("Remove") });
   // Two clicks, no confirm dialog: a modal confirm blocks the extension host,
   // and this only sends the habit to the trash.
   let armed = false;
   remove.addEventListener("click", () => {
     if (!armed) {
       armed = true;
-      remove.textContent = "Remove — sure?";
-      setTimeout(() => { armed = false; remove.textContent = "Remove"; }, 4000);
+      remove.textContent = t("Remove — sure?");
+      setTimeout(() => { armed = false; remove.textContent = t("Remove"); }, 4000);
       return;
     }
     void habits.remove(habit);
   });
   const identity = element("div", { className: "nhab-ident" }, [
-    text("h4", "This habit", "nhab-sub"),
+    text("h4", t("This habit"), "nhab-sub"),
     element("div", { className: "nhab-list__row" }, [name, remove]),
-    text("p", "Click any past day in the grid to correct it.", "nhab-hint"),
+    text("p", t("Click any past day in the grid to correct it."), "nhab-hint"),
   ]);
 
   detail.append(element("div", { className: "nhab-foot" }, [scheduleEditor(habits, habit, today), identity]));
@@ -1059,7 +1085,7 @@ function mountSurface(habits, container, mode) {
   const render = () => {
     shell.replaceChildren();
     if (habits.loading) {
-      shell.append(text("p", "Loading…", "nhab-empty"));
+      shell.append(text("p", t("Loading…"), "nhab-empty"));
       return;
     }
     if (habits.error) {
@@ -1082,7 +1108,7 @@ function mountSurface(habits, container, mode) {
       // The one place a first-run message belongs: the surface that owns
       // adding a habit is the surface that has to say there are none.
       shell.append(element("div", { className: "nhab-detail" }, [
-        text("p", "No habits yet. Name one in the field under the list and press Enter.", "nhab-empty"),
+        text("p", t("No habits yet. Name one in the field under the list and press Enter."), "nhab-empty"),
       ]));
       return;
     }
@@ -1104,7 +1130,7 @@ function mountSurface(habits, container, mode) {
  * the habits, and `ui.modal` is the one envelope every host has. */
 function openHabitsModal(habits) {
   habits.context.ui.modal({
-    title: "Habits",
+    title: t("Habits"),
     mount: ({ container }) => mountSurface(habits, container, "modal"),
   });
 }
@@ -1135,7 +1161,7 @@ function openHabits(habits) {
     if (!shown) openHabitsModal(habits);
   }).catch((cause) => {
     // invoke rejects with strings rather than Errors, as everywhere else here.
-    habits.context.ui.notice(`Could not open Habits: ${String(cause?.message ?? cause)}`);
+    habits.context.ui.notice(t("Could not open Habits: {reason}", { reason: String(cause?.message ?? cause) }));
   });
 }
 
@@ -1282,7 +1308,7 @@ export default {
   manifest: {
     id: "notible.habits",
     name: "Notible Habits",
-    version: "0.9.1",
+    version: "0.9.2",
     apiVersion: "1.8",
     description: "Track habits in the sidebar: tick off what is due today, keep a streak, and see a year at a glance. Daily, on chosen weekdays, every few days or a weekly target.",
     author: "Notible",
@@ -1290,6 +1316,7 @@ export default {
   },
 
   onload(context) {
+    if (context.i18n?.t) t = (key, values) => context.i18n.t(key, values);
     const habits = new Habits(context);
     this._habits = habits;
     this._disposables = [];
@@ -1308,7 +1335,7 @@ export default {
     // `mountSurface`, and it is what drops the `onChange` subscription.
     this._disposables.push(context.views.register({
       id: "surface",
-      title: "Habits",
+      title: t("Habits"),
       // Opt into a primary nav card (added alongside ViewRegistration.nav):
       // Habits is a whole workspace tool the user opens directly and often,
       // not a settings screen shaped like a view — the case that field
@@ -1337,8 +1364,8 @@ export default {
     // nothing outside this plugin refers to either.
     this._disposables.push(context.commands.register({
       id: "heatmap",
-      name: "Habits: open every habit",
-      description: "The whole surface: every habit, its streak, a year of days, its schedule, and a way to correct a day you forgot.",
+      name: t("Habits: open every habit"),
+      description: t("The whole surface: every habit, its streak, a year of days, its schedule, and a way to correct a day you forgot."),
       execute: () => openHabits(habits),
     }));
 

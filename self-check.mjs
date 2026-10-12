@@ -31,6 +31,8 @@ import plugin, {
   weekStart,
   weekdayIndex,
   weekdayLabel,
+  pluralText,
+  LAST_WEEKS,
 } from "./main.js";
 
 // --- identity
@@ -397,7 +399,7 @@ for (const banned of ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.
 // supplied nothing to draw. So the shape is asserted, not merely the call.
 assert.ok(source.includes("context.views.register("), "the habit surface is a view of its own, not a dialog the user has to go looking for");
 assert.ok(/context\.views\.register\(\{[\s\S]{0,400}?mount:/.test(source), "a view registered without a mount draws nothing at all");
-assert.ok(/context\.views\.register\(\{[\s\S]{0,400}?title: "Habits"/.test(source), "`title` is the nav label, verbatim");
+assert.ok(/context\.views\.register\(\{[\s\S]{0,400}?title: (?:t\()?"Habits"/.test(source), "`title` is the nav label, verbatim");
 
 // Core disposes the view on navigate-away, disable, reload and uninstall and
 // clears the container, but a listener the plugin added is the plugin's to
@@ -424,7 +426,7 @@ assert.ok(/\.catch\(\(cause\) => \{[\s\S]{0,220}ui\.notice\(/.test(source), "a r
 // The command's name described a link the sidebar no longer has; the surface
 // it opens is the habit list, the year, the schedule editor and the add field.
 assert.ok(!/name: "Habits: open the heatmap"/.test(source), "the command opens the whole surface, not a heatmap");
-assert.ok(/name: "Habits: open every habit"/.test(source), "and its name says so");
+assert.ok(/name: (?:t\()?"Habits: open every habit"/.test(source), "and its name says so");
 
 assert.ok(source.includes('registerSlot("workspace.sidebar"'), "today's ticks belong in the sidebar");
 // …and nothing else does. The heatmap link and the add-habit field are what
@@ -465,5 +467,22 @@ assert.ok(!/nhab-today__streak--active/.test(source), "the streak is type, not a
 // new habit and patched into any habit that predates it.
 assert.ok(source.includes("graphExclude: true"), "a new habit must be created with the graph-exclusion flag already set");
 assert.ok(source.includes("_healExclusion"), "a habit made before this convention existed must self-heal on load");
+
+// I18N (Hive #55): one table by count. English: one / other. Polish: one / few / other.
+// A locale without the translation, or an old Core whose t returns the key, must show English.
+{
+  const strings = JSON.parse(readFileSync(new URL("./locales/pl.json", import.meta.url), "utf8")).strings;
+  const translate = (language) => (key, values) => {
+    const text = language === "pl" && strings[key] !== undefined ? strings[key] : key;
+    return values ? text.replace(/\{(\w+)\}/g, (whole, name) => (name in values ? String(values[name]) : whole)) : text;
+  };
+  const show = (text, count) => text.replace("{count}", String(count));
+  for (const count of [1, 2, 5, 22]) {
+    assert.equal(pluralText(translate("en"), LAST_WEEKS, count, "en", { count }), show(count === 1 ? "of the last {count} week" : "of the last {count} weeks", count), `English for ${count}`);
+    assert.equal(pluralText(translate("pl"), LAST_WEEKS, count, "pl", { count }), show(count === 1 ? "z ostatniego tygodnia" : count === 5 ? "z ostatnich {count} tygodni" : "z ostatnich {count} tygodni", count), `Polish for ${count}`);
+  }
+  assert.equal(pluralText(translate("cs"), LAST_WEEKS, 2, "cs", { count: 2 }), show("of the last {count} weeks", 2), "a locale with no translation shows English");
+  assert.equal(pluralText(translate("en"), LAST_WEEKS, 2, "pl", { count: 2 }), show("of the last {count} weeks", 2), "an old Core (t returns the key) shows English");
+}
 
 console.log("Notible Habits self-check passed.");
